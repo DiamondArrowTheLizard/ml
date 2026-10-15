@@ -8,11 +8,15 @@ import dataset_description as dd
 import describe_whole as dc
 import describes as ds
 import heteroscedasticity as hs
+import pca_analysis as pa
 import plots as pl
 import regression_models as rm
 
 CATEGORICAL_VARS = ["Gender", "Education Level", "Job Title"]
 TARGET = "Salary"
+MAX_CATEGORIES = 10
+PCA_VARIANCE_THRESHOLD = 0.95
+PCA_MAX_COMPONENTS = 20
 
 
 def main(argv):
@@ -50,20 +54,58 @@ def main(argv):
         for path in paths:
             print(f"  [{group}] {path}")
 
+    X, y = rm.prepare_features(data, TARGET, max_categories=MAX_CATEGORIES)
     print()
-    X, y = rm.prepare_features(data, TARGET)
-    report = rm.build_regression_models(X, y, test_ratio=0.2, cv_folds=5)
+    print(f"Features after one-hot encoding (max {MAX_CATEGORIES} categories/col): "
+          f"{X.shape[1]}")
+
+    print()
+    report = rm.build_regression_models(X, y, test_ratio=0.2, cv_folds=5, label="Raw features")
     print(report)
 
     print()
-    residual_paths = pl.plot_residuals_all(report.models)
-    print("Saved residual plots:")
+    residual_paths = pl.plot_residuals_all(report.models, suffix="raw")
+    print("Saved residual plots (raw features):")
     for path in residual_paths:
         print(f"  {path}")
 
     print()
     het_report = hs.analyse_heteroscedasticity(report.models)
     print(het_report)
+
+    print()
+    pca_result = pa.run_pca_analysis(
+        X,
+        y,
+        variance_threshold=PCA_VARIANCE_THRESHOLD,
+        max_components=PCA_MAX_COMPONENTS,
+    )
+    print(pca_result)
+
+    scree_path = pl.plot_scree(pca_result, max_display=min(PCA_MAX_COMPONENTS, pca_result.n_components))
+    print()
+    print(f"Saved scree plot: {scree_path}")
+
+    print()
+    pca_report = rm.build_regression_models(
+        pca_result.components_df,
+        y,
+        test_ratio=0.2,
+        cv_folds=5,
+        label=f"PCA ({pca_result.n_components} components, "
+              f"{pca_result.variance_threshold:.0%} variance)",
+    )
+    print(pca_report)
+
+    print()
+    pca_residual_paths = pl.plot_residuals_all(pca_report.models, suffix="pca")
+    print("Saved residual plots (PCA features):")
+    for path in pca_residual_paths:
+        print(f"  {path}")
+
+    print()
+    pca_het_report = hs.analyse_heteroscedasticity(pca_report.models)
+    print(pca_het_report)
 
 
 if __name__ == "__main__":

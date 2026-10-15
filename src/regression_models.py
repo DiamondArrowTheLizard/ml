@@ -100,12 +100,14 @@ class RegressionReport:
         train_size: int,
         test_size: int,
         models: list,
+        label: str = "",
     ):
         self.target = target
         self.feature_names = feature_names
         self.train_size = train_size
         self.test_size = test_size
         self.models = models
+        self.label = label
 
     def best_model(self, metric: str = "rmse"):
         reverse = metric in ("r2",)
@@ -118,7 +120,10 @@ class RegressionReport:
     def __str__(self):
         lines = []
         lines.append("=" * 60)
-        lines.append("REGRESSION REPORT")
+        title = "REGRESSION REPORT"
+        if self.label:
+            title = f"REGRESSION REPORT — {self.label}"
+        lines.append(title)
         lines.append("=" * 60)
         lines.append(f"Target variable : {self.target}")
         lines.append(f"Features        : {', '.join(self.feature_names)}")
@@ -138,10 +143,25 @@ class RegressionReport:
         return "\n".join(lines)
 
 
-def prepare_features(dataframe: pd.DataFrame, target: str):
+def _reduce_cardinality(series: pd.Series, max_categories: int) -> pd.Series:
+    if max_categories is None or series.nunique() <= max_categories:
+        return series
+    top = series.value_counts().nlargest(max_categories).index
+    return series.where(series.isin(top), other="Other")
+
+
+def prepare_features(
+    dataframe: pd.DataFrame,
+    target: str,
+    max_categories: int = 10,
+):
     df = dataframe.copy()
     y = df[target].astype(float)
     X = df.drop(columns=[target])
+
+    for col in X.select_dtypes(include=["object", "category"]).columns:
+        X[col] = _reduce_cardinality(X[col], max_categories)
+
     X = pd.get_dummies(X, drop_first=True)
     X = X.astype(float)
     return X, y
@@ -166,8 +186,8 @@ def build_regression_models(
     test_ratio: float = 0.2,
     cv_folds: int = 5,
     random_state: int = 42,
+    label: str = "",
 ) -> RegressionReport:
-
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_ratio, random_state=random_state
     )
@@ -201,4 +221,5 @@ def build_regression_models(
         train_size=len(X_train),
         test_size=len(X_test),
         models=trained_models,
+        label=label,
     )
