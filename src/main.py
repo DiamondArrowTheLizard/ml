@@ -1,4 +1,3 @@
-# main.py
 import sys
 
 import calc as cc
@@ -8,6 +7,7 @@ import dataset_description as dd
 import describe_whole as dc
 import describes as ds
 import heteroscedasticity as hs
+import model_comparison as mc
 import pca_analysis as pa
 import plots as pl
 import regression_models as rm
@@ -16,7 +16,8 @@ CATEGORICAL_VARS = ["Gender", "Education Level", "Job Title"]
 TARGET = "Salary"
 MAX_CATEGORIES = 10
 PCA_VARIANCE_THRESHOLD = 0.95
-PCA_MAX_COMPONENTS = 20
+PCA_MAX_COMPONENTS = 10
+COMPARISON_CSV = "comp/model_comparison.csv"
 
 
 def main(argv):
@@ -56,21 +57,25 @@ def main(argv):
 
     X, y = rm.prepare_features(data, TARGET, max_categories=MAX_CATEGORIES)
     print()
-    print(f"Features after one-hot encoding (max {MAX_CATEGORIES} categories/col): "
-          f"{X.shape[1]}")
+    print(
+        f"Features after one-hot encoding (max {MAX_CATEGORIES} categories/col): "
+        f"{X.shape[1]}"
+    )
 
     print()
-    report = rm.build_regression_models(X, y, test_ratio=0.2, cv_folds=5, label="Raw features")
-    print(report)
+    raw_report = rm.build_regression_models(
+        X, y, test_ratio=0.2, cv_folds=5, label="Raw features"
+    )
+    print(raw_report)
 
     print()
-    residual_paths = pl.plot_residuals_all(report.models, suffix="raw")
+    residual_paths = pl.plot_residuals_all(raw_report.models, suffix="raw")
     print("Saved residual plots (raw features):")
     for path in residual_paths:
         print(f"  {path}")
 
     print()
-    het_report = hs.analyse_heteroscedasticity(report.models)
+    het_report = hs.analyse_heteroscedasticity(raw_report.models)
     print(het_report)
 
     print()
@@ -82,9 +87,13 @@ def main(argv):
     )
     print(pca_result)
 
-    scree_path = pl.plot_scree(pca_result, max_display=min(PCA_MAX_COMPONENTS, pca_result.n_components))
+    scree_path = pl.plot_scree(
+        pca_result, max_display=min(PCA_MAX_COMPONENTS, pca_result.n_components)
+    )
+    cumulative_path = pl.plot_cumulative_variance(pca_result)
     print()
     print(f"Saved scree plot: {scree_path}")
+    print(f"Saved cumulative variance plot: {cumulative_path}")
 
     print()
     pca_report = rm.build_regression_models(
@@ -93,7 +102,7 @@ def main(argv):
         test_ratio=0.2,
         cv_folds=5,
         label=f"PCA ({pca_result.n_components} components, "
-              f"{pca_result.variance_threshold:.0%} variance)",
+        f"{pca_result.variance_threshold:.0%} variance)",
     )
     print(pca_report)
 
@@ -106,6 +115,14 @@ def main(argv):
     print()
     pca_het_report = hs.analyse_heteroscedasticity(pca_report.models)
     print(pca_het_report)
+
+    print()
+    comparison = mc.ModelComparison(raw_report, pca_report)
+    print(comparison)
+
+    csv_path = mc.save_comparison_csv(comparison, COMPARISON_CSV)
+    print()
+    print(f"Saved comparison table: {csv_path}")
 
 
 if __name__ == "__main__":
