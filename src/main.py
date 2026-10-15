@@ -1,6 +1,12 @@
 import sys
 
+import calc as cc
+import crosstabs as ct
 import csv_to_dataframe as ctd
+import describe as dc
+import describes as ds
+
+CATEGORICAL_VARS = ["Gender", "Education Level", "Job Title"]
 
 
 def main(argv):
@@ -9,7 +15,18 @@ def main(argv):
         return
 
     data = ctd.csv_to_dataframe(argv[1])
+    data = data.dropna(how="all").reset_index(drop=True)
+    data = data.dropna().reset_index(drop=True)
+
     print(data)
+
+    dc.describe_print_dataset(data)
+
+    for describe in ds.generate_describes(data):
+        print(describe)
+        print()
+
+    ct.print_crosstabs(ct.generate_crosstabs(data, CATEGORICAL_VARS))
 
 
 if __name__ == "__main__":
