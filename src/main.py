@@ -7,6 +7,7 @@ import csv_to_dataframe as ctd
 import dataset_description as dd
 import describe_whole as dc
 import describes as ds
+import heteroscedasticity as hs
 import plots as pl
 import regression_models as rm
 
@@ -53,6 +54,16 @@ def main(argv):
     X, y = rm.prepare_features(data, TARGET)
     report = rm.build_regression_models(X, y, test_ratio=0.2, cv_folds=5)
     print(report)
+
+    print()
+    residual_paths = pl.plot_residuals_all(report.models)
+    print("Saved residual plots:")
+    for path in residual_paths:
+        print(f"  {path}")
+
+    print()
+    het_report = hs.analyse_heteroscedasticity(report.models)
+    print(het_report)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,15 @@ class RegressionModel:
         self.coefficients: pd.Series = None
         self.intercept: float = None
 
+        self.y_test: np.ndarray = None
+        self.y_pred: np.ndarray = None
+        self.residuals: np.ndarray = None
+
     def evaluate(self, y_true, y_pred):
+        self.y_test = np.asarray(y_true).ravel()
+        self.y_pred = np.asarray(y_pred).ravel()
+        self.residuals = self.y_test - self.y_pred
+
         self.rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
         self.r2 = float(r2_score(y_true, y_pred))
         self.mape = float(mean_absolute_percentage_error(y_true, y_pred))

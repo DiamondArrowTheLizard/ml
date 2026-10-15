@@ -4,6 +4,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 DEFAULT_OUTPUT_DIR = "plots"
@@ -69,6 +70,41 @@ def plot_correlation_matrix(correlation_matrix, output_dir=DEFAULT_OUTPUT_DIR):
     fig.savefig(path)
     plt.close(fig)
     return path
+
+
+def plot_residuals(model, output_dir=DEFAULT_OUTPUT_DIR):
+    """Residuals vs fitted values with a reference line at 0."""
+    _ensure_output_dir(output_dir)
+    if model.residuals is None or model.y_pred is None:
+        return None
+
+    fitted = np.asarray(model.y_pred).ravel()
+    residuals = np.asarray(model.residuals).ravel()
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.scatter(fitted, residuals, alpha=0.5, edgecolor="k", linewidth=0.3)
+    ax.axhline(y=0, color="red", linestyle="--", linewidth=1.5, label="y = 0")
+    ax.set_title(f"Residuals vs Fitted — {model.name}")
+    ax.set_xlabel("Fitted values")
+    ax.set_ylabel("Residuals")
+    ax.legend()
+    fig.tight_layout()
+
+    safe_name = model.name.replace(" ", "_")
+    path = os.path.join(output_dir, f"residuals_{safe_name}.png")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+def plot_residuals_all(models, output_dir=DEFAULT_OUTPUT_DIR):
+    _ensure_output_dir(output_dir)
+    saved = []
+    for model in models:
+        path = plot_residuals(model, output_dir)
+        if path is not None:
+            saved.append(path)
+    return saved
 
 
 def generate_all_plots(description, output_dir=DEFAULT_OUTPUT_DIR):
