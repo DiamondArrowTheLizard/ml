@@ -1,9 +1,13 @@
 import sys
 
+import describe as dc
+
+import calc as cc
 import crosstabs as ct
 import csv_to_dataframe as ctd
-import describe_whole as dc
+import dataset_description as dd
 import describes as ds
+import plots as pl
 
 CATEGORICAL_VARS = ["Gender", "Education Level", "Job Title"]
 
@@ -19,12 +23,24 @@ def main(argv):
 
     print(data)
 
-    dc.describe_whole_print_dataset(data)
+    dc.describe_print_dataset(data)
+
+    print(f"Sturges rule bins: {cc.calc_sturges_rule(len(data))}")
 
     for describe in ds.generate_describes(data):
         print(describe)
+        print()
 
     ct.print_crosstabs(ct.generate_crosstabs(data, CATEGORICAL_VARS))
+
+    description = dd.DatasetDescription(data)
+    print(description)
+
+    saved = pl.generate_all_plots(description)
+    print("Saved plots:")
+    for group, paths in saved.items():
+        for path in paths:
+            print(f"  [{group}] {path}")
 
 
 if __name__ == "__main__":
