@@ -9,6 +9,28 @@ from sklearn.preprocessing import StandardScaler
 tf.random.set_seed(42)
 tf.keras.utils.set_random_seed(42)
 
+
+class TensorBoardWithLR(tf.keras.callbacks.TensorBoard):
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        optimizer = self.model.optimizer
+        lr = getattr(optimizer, "learning_rate", None)
+        if lr is None:
+            lr = getattr(optimizer, "lr", None)
+        if lr is not None:
+            try:
+                if hasattr(lr, "numpy"):
+                    lr_value = float(lr.numpy())
+                elif hasattr(lr, "read_value"):
+                    lr_value = float(lr.read_value())
+                else:
+                    lr_value = float(lr)
+                logs["learning_rate"] = lr_value
+            except (TypeError, ValueError, RuntimeError):
+                pass
+        super().on_epoch_end(epoch, logs)
+
+
 class NNResult:
     def __init__(self, history, y_test, y_pred, classes, log_dir):
         self.history = history
@@ -21,7 +43,9 @@ class NNResult:
         return float(accuracy_score(self.y_test, self.y_pred))
 
     def f1_macro(self):
-        return float(f1_score(self.y_test, self.y_pred, average="macro", zero_division=0))
+        return float(
+            f1_score(self.y_test, self.y_pred, average="macro", zero_division=0)
+        )
 
     def __str__(self):
         return (
@@ -33,11 +57,14 @@ class NNResult:
 
 
 def build_nn_classifier(
-    dataframe, target, test_ratio=0.2, random_state=42,
-    epochs=100, batch_size=16, log_dir="logs/fit",
+    dataframe,
+    target,
+    test_ratio=0.2,
+    random_state=42,
+    epochs=100,
+    batch_size=16,
+    log_dir="logs/fit",
 ):
-    import tensorflow as tf
-
     os.makedirs(log_dir, exist_ok=True)
 
     feature_columns = [
@@ -67,16 +94,17 @@ def build_nn_classifier(
         ]
     )
     model.compile(
-        optimizer="adam",
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
 
-    tensorboard_cb = tf.keras.callbacks.TensorBoard(
+    tensorboard_cb = TensorBoardWithLR(
         log_dir=log_dir, histogram_freq=1, write_graph=True
     )
     history = model.fit(
-        X_train, y_train_idx,
+        X_train,
+        y_train_idx,
         validation_split=0.2,
         epochs=epochs,
         batch_size=batch_size,
