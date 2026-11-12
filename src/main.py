@@ -1,11 +1,14 @@
 import sys
 
+from sklearn.model_selection import train_test_split as tts
+
 import calc as cc
 import classification_models as cm
 import csv_to_dataframe as ctd
 import dataset_description as dd
 import describe_whole as dc
 import describes as ds
+import hyperparameter_tuning as ht
 import model_comparison as mc
 import pca_analysis as pa
 import plots as pl
@@ -14,6 +17,7 @@ TARGET = "Wine"
 PCA_VARIANCE_THRESHOLD = 0.95
 PCA_MAX_COMPONENTS = 10
 COMPARISON_CSV = "comp/model_comparison.csv"
+TUNING_CSV = "comp/tuning_summary.csv"
 
 
 def main(argv):
@@ -54,7 +58,7 @@ def main(argv):
 
     print()
     raw_report = cm.build_classification_models(
-        X, y, test_ratio=0.2, cv_folds=5, label="Raw features"
+        X, y, test_ratio=0.2, cv_folds=5, label="Raw features (default params)"
     )
     print(raw_report)
 
@@ -71,6 +75,64 @@ def main(argv):
 
     metric_path = pl.plot_metric_comparison(raw_report, suffix="raw")
     print(f"Saved metric comparison (raw): {metric_path}")
+
+    print()
+    print("=" * 70)
+    print("HYPERPARAMETER TUNING PHASE")
+    print("=" * 70)
+    X_tr, X_te, y_tr, _y_te = tts(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    print(
+        f"Tuning on training subset: {len(X_tr)} samples "
+        f"(test subset {len(X_te)} untouched)"
+    )
+    tuning_report = ht.tune_all_models(
+        X_tr, y_tr, cv_folds=5, random_state=42
+    )
+    print()
+    print(tuning_report)
+
+    print()
+    tuned_overrides = tuning_report.as_estimators(random_state=42)
+    tuned_report = cm.build_classification_models(
+        X, y, test_ratio=0.2, cv_folds=5,
+        estimator_overrides=tuned_overrides,
+        label="Tuned (raw features)",
+    )
+    print(tuned_report)
+
+    print()
+    tuned_cm_paths = pl.plot_confusion_matrices_all(
+        tuned_report.models, suffix="tuned_raw"
+    )
+    print("Saved confusion matrices (tuned, raw):")
+    for p in tuned_cm_paths:
+        print(f"  {p}")
+
+    tuned_roc_paths = pl.plot_roc_curves_all(
+        tuned_report.models, suffix="tuned_raw"
+    )
+    print("Saved ROC curves (tuned, raw):")
+    for p in tuned_roc_paths:
+        print(f"  {p}")
+
+    print()
+    sensitivity_paths = pl.plot_param_sensitivity_all(tuning_report)
+    print("Saved parameter sensitivity plots:")
+    for p in sensitivity_paths:
+        print(f"  {p}")
+
+    cmp_path = pl.plot_default_vs_tuned(
+        raw_report, tuned_report, suffix="raw"
+    )
+    print(f"Saved default-vs-tuned bar chart: {cmp_path}")
+
+    tuning_csv = ht.save_tuning_csv(tuning_report, TUNING_CSV)
+    print(f"Saved tuning summary: {tuning_csv}")
+
+    print()
+    print(ht.compare_default_vs_tuned(raw_report, tuned_report))
 
     print()
     pca_result = pa.run_pca_analysis(

@@ -58,7 +58,9 @@ class ClassificationModel:
     def evaluate(self, y_true, y_pred, y_proba=None, proba_classes=None):
         self.y_test = np.asarray(y_true)
         self.y_pred = np.asarray(y_pred)
-        self.classes = [int(c) for c in np.unique(np.concatenate([self.y_test, self.y_pred]))]
+        self.classes = [
+            int(c) for c in np.unique(np.concatenate([self.y_test, self.y_pred]))
+        ]
 
         self.accuracy = float(accuracy_score(self.y_test, self.y_pred))
         self.precision_macro = float(
@@ -71,7 +73,9 @@ class ClassificationModel:
             f1_score(self.y_test, self.y_pred, average="macro", zero_division=0)
         )
         self.precision_weighted = float(
-            precision_score(self.y_test, self.y_pred, average="weighted", zero_division=0)
+            precision_score(
+                self.y_test, self.y_pred, average="weighted", zero_division=0
+            )
         )
         self.recall_weighted = float(
             recall_score(self.y_test, self.y_pred, average="weighted", zero_division=0)
@@ -82,8 +86,11 @@ class ClassificationModel:
 
         self.confusion = confusion_matrix(self.y_test, self.y_pred, labels=self.classes)
         self.report_dict = classification_report(
-            self.y_test, self.y_pred,
-            labels=self.classes, zero_division=0, output_dict=True,
+            self.y_test,
+            self.y_pred,
+            labels=self.classes,
+            zero_division=0,
+            output_dict=True,
         )
 
         if y_proba is not None and proba_classes is not None:
@@ -93,8 +100,11 @@ class ClassificationModel:
             try:
                 self.roc_auc_ovr_macro = float(
                     roc_auc_score(
-                        self.y_test, self.y_proba,
-                        multi_class="ovr", average="macro", labels=labels,
+                        self.y_test,
+                        self.y_proba,
+                        multi_class="ovr",
+                        average="macro",
+                        labels=labels,
                     )
                 )
             except ValueError:
@@ -102,8 +112,11 @@ class ClassificationModel:
             try:
                 self.roc_auc_ovo_macro = float(
                     roc_auc_score(
-                        self.y_test, self.y_proba,
-                        multi_class="ovo", average="macro", labels=labels,
+                        self.y_test,
+                        self.y_proba,
+                        multi_class="ovo",
+                        average="macro",
+                        labels=labels,
                     )
                 )
             except ValueError:
@@ -161,8 +174,7 @@ class ClassificationModel:
             f"(+/- {self.cv_accuracy_std:.4f})"
         )
         lines.append(
-            f"CV F1 (macro)          : {self.cv_f1_mean:.4f} "
-            f"(+/- {self.cv_f1_std:.4f})"
+            f"CV F1 (macro)          : {self.cv_f1_mean:.4f} (+/- {self.cv_f1_std:.4f})"
         )
         if self.cv_auc_mean is not None:
             lines.append(
@@ -254,41 +266,86 @@ def _train_model(
 
 
 def build_classification_models(
-    X, y, test_ratio=0.2, cv_folds=5, random_state=42, label=""
+    X,
+    y,
+    test_ratio=0.2,
+    cv_folds=5,
+    random_state=42,
+    label="",
+    estimator_overrides=None,
 ):
+    overrides = estimator_overrides or {}
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_ratio, random_state=random_state, stratify=y
     )
 
     standard_specs = [
-        ("Naive Bayes (Gaussian)", GaussianNB()),
-        ("Decision Tree", DecisionTreeClassifier(random_state=random_state)),
-        ("LDA", LinearDiscriminantAnalysis()),
-        ("SVM (RBF)", CalibratedClassifierCV(
-            SVC(kernel="rbf", gamma="scale", random_state=random_state),
-            ensemble=False,
-        )),
-        ("KNN (k=5)", KNeighborsClassifier(n_neighbors=5)),
+        (
+            "Naive Bayes (Gaussian)",
+            overrides.get("Naive Bayes (Gaussian)", GaussianNB()),
+        ),
+        (
+            "Decision Tree",
+            overrides.get(
+                "Decision Tree", DecisionTreeClassifier(random_state=random_state)
+            ),
+        ),
+        ("LDA", overrides.get("LDA", LinearDiscriminantAnalysis())),
+        (
+            "SVM (RBF)",
+            overrides.get(
+                "SVM (RBF)",
+                CalibratedClassifierCV(
+                    SVC(kernel="rbf", gamma="scale", random_state=random_state),
+                    ensemble=False,
+                ),
+            ),
+        ),
+        ("KNN (k=5)", overrides.get("KNN (k=5)", KNeighborsClassifier(n_neighbors=5))),
     ]
     minmax_specs = [
-        ("Naive Bayes (Multinomial)", MultinomialNB()),
-        ("Naive Bayes (Complement)", ComplementNB()),
-        ("Naive Bayes (Bernoulli)", BernoulliNB(binarize=0.5)),
+        (
+            "Naive Bayes (Multinomial)",
+            overrides.get("Naive Bayes (Multinomial)", MultinomialNB()),
+        ),
+        (
+            "Naive Bayes (Complement)",
+            overrides.get("Naive Bayes (Complement)", ComplementNB()),
+        ),
+        (
+            "Naive Bayes (Bernoulli)",
+            overrides.get("Naive Bayes (Bernoulli)", BernoulliNB(binarize=0.5)),
+        ),
     ]
 
     trained = []
     for name, est in standard_specs:
         trained.append(
             _train_model(
-                name, est, StandardScaler(),
-                X_train, X_test, y_train, y_test, X.columns, cv_folds,
+                name,
+                est,
+                StandardScaler(),
+                X_train,
+                X_test,
+                y_train,
+                y_test,
+                X.columns,
+                cv_folds,
             )
         )
     for name, est in minmax_specs:
         trained.append(
             _train_model(
-                name, est, MinMaxScaler(),
-                X_train, X_test, y_train, y_test, X.columns, cv_folds,
+                name,
+                est,
+                MinMaxScaler(),
+                X_train,
+                X_test,
+                y_train,
+                y_test,
+                X.columns,
+                cv_folds,
             )
         )
 
