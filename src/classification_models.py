@@ -210,7 +210,7 @@ def build_classification_models(
     minmax_specs = [
         ("Naive Bayes (Multinomial)", MultinomialNB()),
         ("Naive Bayes (Complement)", ComplementNB()),
-        ("Naive Bayes (Bernoulli)", BernoulliNB()),
+        ("Naive Bayes (Bernoulli)", BernoulliNB(binarize=0.5)),
     ]
 
     trained = []

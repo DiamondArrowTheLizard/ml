@@ -58,7 +58,7 @@ def plot_categorical_distributions(
 def plot_correlation_matrix(correlation_matrix, output_dir=DEFAULT_OUTPUT_DIR):
     _ensure_output_dir(output_dir)
     plt.close("all")
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(
         correlation_matrix,
         annot=True,
@@ -68,6 +68,7 @@ def plot_correlation_matrix(correlation_matrix, output_dir=DEFAULT_OUTPUT_DIR):
         vmax=1,
         square=True,
         ax=ax,
+        annot_kws={"size": 7},
     )
     ax.set_title("Correlation Matrix (numeric features)")
     fig.tight_layout()
@@ -77,44 +78,92 @@ def plot_correlation_matrix(correlation_matrix, output_dir=DEFAULT_OUTPUT_DIR):
     return path
 
 
-def plot_residuals(model, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
+def _safe_name(name: str) -> str:
+    return (
+        name.replace(" ", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("=", "")
+        .replace(",", "")
+    )
+
+
+def plot_confusion_matrix(model, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
     _ensure_output_dir(output_dir)
-    if model.residuals is None or model.y_pred is None:
+    if model.confusion is None:
         return None
-
     plt.close("all")
-    fitted = np.asarray(model.y_pred).ravel()
-    residuals = np.asarray(model.residuals).ravel()
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(fitted, residuals, alpha=0.5, edgecolor="k", linewidth=0.3)
-    ax.axhline(y=0, color="red", linestyle="--", linewidth=1.5, label="y = 0")
-    title = f"Residuals vs Fitted — {model.name}"
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.heatmap(
+        model.confusion,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=model.classes,
+        yticklabels=model.classes,
+        square=True,
+        cbar=False,
+        ax=ax,
+    )
+    title = f"Confusion Matrix — {model.name}"
     if suffix:
         title += f" ({suffix})"
     ax.set_title(title)
-    ax.set_xlabel("Fitted values")
-    ax.set_ylabel("Residuals")
-    ax.legend()
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
     fig.tight_layout()
 
-    safe_name = model.name.replace(" ", "_")
+    safe = _safe_name(model.name)
     if suffix:
-        safe_name = f"{safe_name}_{suffix}"
-    path = os.path.join(output_dir, f"residuals_{safe_name}.png")
+        safe = f"{safe}_{suffix}"
+    path = os.path.join(output_dir, f"confusion_{safe}.png")
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def plot_residuals_all(models, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
+def plot_confusion_matrices_all(models, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
     _ensure_output_dir(output_dir)
     saved = []
     for model in models:
-        path = plot_residuals(model, output_dir, suffix=suffix)
+        path = plot_confusion_matrix(model, output_dir, suffix=suffix)
         if path is not None:
             saved.append(path)
     return saved
+
+
+def plot_metric_comparison(report, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
+    _ensure_output_dir(output_dir)
+    plt.close("all")
+
+    names = [m.name for m in report.models]
+    metrics = {
+        "Accuracy": [m.accuracy for m in report.models],
+        "F1 (macro)": [m.f1_macro for m in report.models],
+        "Precision (macro)": [m.precision_macro for m in report.models],
+        "Recall (macro)": [m.recall_macro for m in report.models],
+    }
+    x = np.arange(len(names))
+    width = 0.2
+    fig, ax = plt.subplots(figsize=(13, 5))
+    for i, (label, values) in enumerate(metrics.items()):
+        ax.bar(x + (i - 1.5) * width, values, width, label=label)
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=40, ha="right", fontsize=8)
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("Score")
+    title = "Model comparison — test metrics"
+    if suffix:
+        title += f" ({suffix})"
+    ax.set_title(title)
+    ax.legend(loc="lower right", fontsize=8)
+    fig.tight_layout()
+
+    safe = f"metric_comparison_{suffix}" if suffix else "metric_comparison"
+    path = os.path.join(output_dir, f"{safe}.png")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
 
 
 def plot_scree(pca_result, output_dir=DEFAULT_OUTPUT_DIR, max_display: int = 10):
@@ -127,25 +176,14 @@ def plot_scree(pca_result, output_dir=DEFAULT_OUTPUT_DIR, max_display: int = 10)
     x = np.arange(len(ratios))
 
     fig, ax1 = plt.subplots(figsize=(11, 5))
-
     bars = ax1.bar(
-        x,
-        ratios,
-        width=0.55,
-        alpha=0.85,
-        color="steelblue",
-        edgecolor="black",
-        linewidth=0.6,
-        label="Individual variance",
+        x, ratios, width=0.55, alpha=0.85, color="steelblue",
+        edgecolor="black", linewidth=0.6, label="Individual variance",
     )
     for rect, value in zip(bars, ratios):
         ax1.text(
-            rect.get_x() + rect.get_width() / 2,
-            value,
-            f"{value:.1%}",
-            ha="center",
-            va="bottom",
-            fontsize=8,
+            rect.get_x() + rect.get_width() / 2, value, f"{value:.1%}",
+            ha="center", va="bottom", fontsize=8,
         )
 
     ax1.set_xlabel("Principal component")
@@ -156,31 +194,17 @@ def plot_scree(pca_result, output_dir=DEFAULT_OUTPUT_DIR, max_display: int = 10)
 
     ax2 = ax1.twinx()
     ax2.plot(
-        x,
-        cumulative,
-        color="darkred",
-        marker="o",
-        markersize=6,
-        linewidth=1.8,
-        label="Cumulative variance",
+        x, cumulative, color="darkred", marker="o", markersize=6,
+        linewidth=1.8, label="Cumulative variance",
     )
     for xi, value in zip(x, cumulative):
         ax2.annotate(
-            f"{value:.1%}",
-            (xi, value),
-            textcoords="offset points",
-            xytext=(0, 8),
-            ha="center",
-            fontsize=8,
-            color="darkred",
+            f"{value:.1%}", (xi, value), textcoords="offset points",
+            xytext=(0, 8), ha="center", fontsize=8, color="darkred",
         )
-
     ax2.axhline(
-        y=pca_result.variance_threshold,
-        color="green",
-        linestyle="--",
-        linewidth=1.2,
-        label=f"Threshold = {pca_result.variance_threshold:.2f}",
+        y=pca_result.variance_threshold, color="green", linestyle="--",
+        linewidth=1.2, label=f"Threshold = {pca_result.variance_threshold:.2f}",
     )
     ax2.set_ylabel("Cumulative explained variance")
     ax2.set_ylim(0, 1.05)
@@ -193,9 +217,8 @@ def plot_scree(pca_result, output_dir=DEFAULT_OUTPUT_DIR, max_display: int = 10)
     total_var = pca_result.cumulative_variance_ratio[-1]
     ax1.set_title(
         f"Scree Plot — showing first {len(ratios)} of {total_kept} components "
-        f"(total variance explained by all kept components: {total_var:.2%})"
+        f"(total variance explained by kept components: {total_var:.2%})"
     )
-
     fig.tight_layout()
     path = os.path.join(output_dir, "pca_scree.png")
     fig.savefig(path)
@@ -206,18 +229,13 @@ def plot_scree(pca_result, output_dir=DEFAULT_OUTPUT_DIR, max_display: int = 10)
 def plot_cumulative_variance(pca_result, output_dir=DEFAULT_OUTPUT_DIR):
     _ensure_output_dir(output_dir)
     plt.close("all")
-
     cumulative = pca_result.cumulative_variance_ratio
     x = np.arange(len(cumulative))
-
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(x, cumulative, color="darkred", marker="o", markersize=4, linewidth=1.5)
     ax.axhline(
-        y=pca_result.variance_threshold,
-        color="green",
-        linestyle="--",
-        linewidth=1.2,
-        label=f"Threshold = {pca_result.variance_threshold:.2f}",
+        y=pca_result.variance_threshold, color="green", linestyle="--",
+        linewidth=1.2, label=f"Threshold = {pca_result.variance_threshold:.2f}",
     )
     ax.set_xlabel("Number of principal components")
     ax.set_ylabel("Cumulative explained variance")
@@ -225,7 +243,6 @@ def plot_cumulative_variance(pca_result, output_dir=DEFAULT_OUTPUT_DIR):
     ax.set_title("PCA — cumulative explained variance")
     ax.legend()
     fig.tight_layout()
-
     path = os.path.join(output_dir, "pca_cumulative_variance.png")
     fig.savefig(path)
     plt.close(fig)
