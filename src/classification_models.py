@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import (
     accuracy_score,
@@ -8,6 +9,7 @@ from sklearn.metrics import (
     f1_score,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.naive_bayes import BernoulliNB, ComplementNB, GaussianNB, MultinomialNB
@@ -32,13 +34,20 @@ class ClassificationModel:
         self.recall_weighted = None
         self.f1_weighted = None
 
+        self.roc_auc_ovr_macro = None
+        self.roc_auc_ovo_macro = None
+
         self.cv_accuracy_mean = None
         self.cv_accuracy_std = None
         self.cv_f1_mean = None
         self.cv_f1_std = None
+        self.cv_auc_mean = None
+        self.cv_auc_std = None
 
         self.y_test = None
         self.y_pred = None
+        self.y_proba = None
+        self.proba_classes = None
         self.classes = None
         self.confusion = None
         self.report_dict = None
@@ -46,10 +55,10 @@ class ClassificationModel:
         self.feature_importances = None
         self.coefficients = None
 
-    def evaluate(self, y_true, y_pred):
+    def evaluate(self, y_true, y_pred, y_proba=None, proba_classes=None):
         self.y_test = np.asarray(y_true)
         self.y_pred = np.asarray(y_pred)
-        self.classes = np.unique(np.concatenate([self.y_test, self.y_pred]))
+        self.classes = [int(c) for c in np.unique(np.concatenate([self.y_test, self.y_pred]))]
 
         self.accuracy = float(accuracy_score(self.y_test, self.y_pred))
         self.precision_macro = float(
@@ -77,6 +86,29 @@ class ClassificationModel:
             labels=self.classes, zero_division=0, output_dict=True,
         )
 
+        if y_proba is not None and proba_classes is not None:
+            self.y_proba = np.asarray(y_proba)
+            self.proba_classes = [int(c) for c in proba_classes]
+            labels = self.proba_classes
+            try:
+                self.roc_auc_ovr_macro = float(
+                    roc_auc_score(
+                        self.y_test, self.y_proba,
+                        multi_class="ovr", average="macro", labels=labels,
+                    )
+                )
+            except ValueError:
+                self.roc_auc_ovr_macro = None
+            try:
+                self.roc_auc_ovo_macro = float(
+                    roc_auc_score(
+                        self.y_test, self.y_proba,
+                        multi_class="ovo", average="macro", labels=labels,
+                    )
+                )
+            except ValueError:
+                self.roc_auc_ovo_macro = None
+
     def cross_validate(self, X, y):
         acc = cross_val_score(self.model, X, y, cv=self.cv_folds, scoring="accuracy")
         self.cv_accuracy_mean = float(acc.mean())
@@ -85,6 +117,16 @@ class ClassificationModel:
         f1 = cross_val_score(self.model, X, y, cv=self.cv_folds, scoring="f1_macro")
         self.cv_f1_mean = float(f1.mean())
         self.cv_f1_std = float(f1.std())
+
+        try:
+            auc = cross_val_score(
+                self.model, X, y, cv=self.cv_folds, scoring="roc_auc_ovr"
+            )
+            self.cv_auc_mean = float(auc.mean())
+            self.cv_auc_std = float(auc.std())
+        except (ValueError, AttributeError):
+            self.cv_auc_mean = None
+            self.cv_auc_std = None
 
     def store_importance(self, feature_names):
         est = self.model
@@ -110,6 +152,10 @@ class ClassificationModel:
         lines.append(f"Test Recall (macro)    : {self.recall_macro:.4f}")
         lines.append(f"Test F1 (macro)        : {self.f1_macro:.4f}")
         lines.append(f"Test F1 (weighted)     : {self.f1_weighted:.4f}")
+        if self.roc_auc_ovr_macro is not None:
+            lines.append(f"Test AUC-ROC (OvR)     : {self.roc_auc_ovr_macro:.4f}")
+        if self.roc_auc_ovo_macro is not None:
+            lines.append(f"Test AUC-ROC (OvO)     : {self.roc_auc_ovo_macro:.4f}")
         lines.append(
             f"CV Accuracy            : {self.cv_accuracy_mean:.4f} "
             f"(+/- {self.cv_accuracy_std:.4f})"
@@ -118,6 +164,11 @@ class ClassificationModel:
             f"CV F1 (macro)          : {self.cv_f1_mean:.4f} "
             f"(+/- {self.cv_f1_std:.4f})"
         )
+        if self.cv_auc_mean is not None:
+            lines.append(
+                f"CV AUC-ROC (OvR)       : {self.cv_auc_mean:.4f} "
+                f"(+/- {self.cv_auc_std:.4f})"
+            )
         if self.feature_importances is not None:
             lines.append("Feature importances (top 10):")
             for name, value in (
@@ -187,7 +238,16 @@ def _train_model(
     model = ClassificationModel(name, pipeline, cv_folds)
     pipeline.fit(X_train, y_train)
     y_pred = pipeline.predict(X_test)
-    model.evaluate(y_test, y_pred)
+
+    y_proba = None
+    proba_classes = None
+    try:
+        y_proba = pipeline.predict_proba(X_test)
+        proba_classes = list(pipeline.classes_)
+    except (AttributeError, NotImplementedError):
+        pass
+
+    model.evaluate(y_test, y_pred, y_proba=y_proba, proba_classes=proba_classes)
     model.cross_validate(X_train, y_train)
     model.store_importance(feature_names)
     return model
@@ -204,7 +264,10 @@ def build_classification_models(
         ("Naive Bayes (Gaussian)", GaussianNB()),
         ("Decision Tree", DecisionTreeClassifier(random_state=random_state)),
         ("LDA", LinearDiscriminantAnalysis()),
-        ("SVM (RBF)", SVC(kernel="rbf", gamma="scale")),
+        ("SVM (RBF)", CalibratedClassifierCV(
+            SVC(kernel="rbf", gamma="scale", random_state=random_state),
+            ensemble=False,
+        )),
         ("KNN (k=5)", KNeighborsClassifier(n_neighbors=5)),
     ]
     minmax_specs = [

@@ -6,6 +6,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from sklearn.metrics import auc, roc_curve
+from sklearn.preprocessing import label_binarize
 
 DEFAULT_OUTPUT_DIR = "plots"
 
@@ -60,15 +62,8 @@ def plot_correlation_matrix(correlation_matrix, output_dir=DEFAULT_OUTPUT_DIR):
     plt.close("all")
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(
-        correlation_matrix,
-        annot=True,
-        fmt=".2f",
-        cmap="coolwarm",
-        vmin=-1,
-        vmax=1,
-        square=True,
-        ax=ax,
-        annot_kws={"size": 7},
+        correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm",
+        vmin=-1, vmax=1, square=True, ax=ax, annot_kws={"size": 7},
     )
     ax.set_title("Correlation Matrix (numeric features)")
     fig.tight_layout()
@@ -95,15 +90,9 @@ def plot_confusion_matrix(model, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""
     plt.close("all")
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(
-        model.confusion,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        xticklabels=model.classes,
-        yticklabels=model.classes,
-        square=True,
-        cbar=False,
-        ax=ax,
+        model.confusion, annot=True, fmt="d", cmap="Blues",
+        xticklabels=model.classes, yticklabels=model.classes,
+        square=True, cbar=False, ax=ax,
     )
     title = f"Confusion Matrix — {model.name}"
     if suffix:
@@ -132,6 +121,68 @@ def plot_confusion_matrices_all(models, output_dir=DEFAULT_OUTPUT_DIR, suffix: s
     return saved
 
 
+def plot_roc_curves(model, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
+    _ensure_output_dir(output_dir)
+    if model.y_test is None or model.y_proba is None or model.proba_classes is None:
+        return None
+
+    plt.close("all")
+    classes = list(model.proba_classes)
+    y_bin = label_binarize(model.y_test, classes=classes)
+    if y_bin.ndim == 1 or y_bin.shape[1] == 1:
+        y_bin = np.hstack([1 - y_bin.reshape(-1, 1), y_bin.reshape(-1, 1)])
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+
+    fpr_all = {}
+    tpr_all = {}
+    for i, cls in enumerate(classes):
+        fpr, tpr, _ = roc_curve(y_bin[:, i], model.y_proba[:, i])
+        fpr_all[cls] = fpr
+        tpr_all[cls] = tpr
+        cls_auc = auc(fpr, tpr)
+        ax.plot(fpr, tpr, linewidth=1.5, label=f"Class {cls} (AUC = {cls_auc:.3f})")
+
+    all_fpr = np.unique(np.concatenate([fpr_all[c] for c in classes]))
+    mean_tpr = np.zeros_like(all_fpr)
+    for cls in classes:
+        mean_tpr += np.interp(all_fpr, fpr_all[cls], tpr_all[cls])
+    mean_tpr /= len(classes)
+    macro_auc = auc(all_fpr, mean_tpr)
+    ax.plot(
+        all_fpr, mean_tpr, color="black", linestyle="--", linewidth=2.2,
+        label=f"Macro-avg (AUC = {macro_auc:.3f})",
+    )
+
+    ax.plot([0, 1], [0, 1], color="gray", linestyle=":", linewidth=1)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    title = f"ROC Curves — {model.name}"
+    if suffix:
+        title += f" ({suffix})"
+    ax.set_title(title)
+    ax.legend(loc="lower right", fontsize=9)
+    fig.tight_layout()
+
+    safe = _safe_name(model.name)
+    if suffix:
+        safe = f"{safe}_{suffix}"
+    path = os.path.join(output_dir, f"roc_{safe}.png")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+def plot_roc_curves_all(models, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
+    _ensure_output_dir(output_dir)
+    saved = []
+    for model in models:
+        path = plot_roc_curves(model, output_dir, suffix=suffix)
+        if path is not None:
+            saved.append(path)
+    return saved
+
+
 def plot_metric_comparison(report, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = ""):
     _ensure_output_dir(output_dir)
     plt.close("all")
@@ -139,15 +190,21 @@ def plot_metric_comparison(report, output_dir=DEFAULT_OUTPUT_DIR, suffix: str = 
     names = [m.name for m in report.models]
     metrics = {
         "Accuracy": [m.accuracy for m in report.models],
-        "F1 (macro)": [m.f1_macro for m in report.models],
         "Precision (macro)": [m.precision_macro for m in report.models],
         "Recall (macro)": [m.recall_macro for m in report.models],
+        "F1 (macro)": [m.f1_macro for m in report.models],
+        "AUC-ROC (OvR)": [
+            m.roc_auc_ovr_macro if m.roc_auc_ovr_macro is not None else np.nan
+            for m in report.models
+        ],
     }
     x = np.arange(len(names))
-    width = 0.2
-    fig, ax = plt.subplots(figsize=(13, 5))
+    n_metrics = len(metrics)
+    width = 0.16
+    fig, ax = plt.subplots(figsize=(14, 5))
     for i, (label, values) in enumerate(metrics.items()):
-        ax.bar(x + (i - 1.5) * width, values, width, label=label)
+        offset = (i - (n_metrics - 1) / 2) * width
+        ax.bar(x + offset, values, width, label=label)
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=40, ha="right", fontsize=8)
     ax.set_ylim(0, 1.05)

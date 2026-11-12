@@ -49,7 +49,7 @@ def main(argv):
     print()
     print(
         f"Features: {X.shape[1]}, "
-        f"Classes: {sorted(y.unique())}, Samples: {len(y)}"
+        f"Classes: {[int(c) for c in sorted(y.unique())]}, Samples: {len(y)}"
     )
 
     print()
@@ -62,6 +62,11 @@ def main(argv):
     cm_paths = pl.plot_confusion_matrices_all(raw_report.models, suffix="raw")
     print("Saved confusion matrices (raw):")
     for p in cm_paths:
+        print(f"  {p}")
+
+    roc_paths = pl.plot_roc_curves_all(raw_report.models, suffix="raw")
+    print("Saved ROC curves (raw):")
+    for p in roc_paths:
         print(f"  {p}")
 
     metric_path = pl.plot_metric_comparison(raw_report, suffix="raw")
@@ -96,6 +101,11 @@ def main(argv):
     pca_cm_paths = pl.plot_confusion_matrices_all(pca_report.models, suffix="pca")
     print("Saved confusion matrices (PCA):")
     for p in pca_cm_paths:
+        print(f"  {p}")
+
+    pca_roc_paths = pl.plot_roc_curves_all(pca_report.models, suffix="pca")
+    print("Saved ROC curves (PCA):")
+    for p in pca_roc_paths:
         print(f"  {p}")
 
     pca_metric_path = pl.plot_metric_comparison(pca_report, suffix="pca")
