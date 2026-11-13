@@ -221,4 +221,3 @@ plots/*
 src/plots/*
 comp/*
 model_comparison.csv
-logs/*
